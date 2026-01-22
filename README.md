@@ -197,7 +197,7 @@
     const OFFICE_LOCATION = {
       lat: -6.1168,
       lng: 106.1542,
-      radius: 200, // meters
+      radius: 1000, // meters
       name: 'KPKNL Serang'
     };
 
@@ -574,7 +574,7 @@
           <div class="space-y-6 fade-in">
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <h2 class="text-2xl font-bold text-slate-800">Dashboard Pembimbing 📊</h2>
+                <h2 class="text-2xl font-bold text-slate-800">Dashboard Pembimbing ����</h2>
                 <p class="text-slate-500">${currentUser.name} - ${formatDate(new Date())}</p>
               </div>
             </div>
@@ -825,7 +825,8 @@
             <div class="p-4 bg-slate-50 rounded-xl">
               <p class="font-medium text-slate-800">${OFFICE_LOCATION.name}</p>
               <p class="text-sm text-slate-500 mt-1">Jl. Raya Serang–Cilegon, Km. 03, Serang, Banten</p>
-              <p class="text-xs text-slate-400 mt-2">Radius maksimal: ${OFFICE_LOCATION.radius} meter</p>
+              <p class="text-xs text-slate-400 mt-2">Radius maksimal: ${OFFICE_LOCATION.radius} meter (1 km)</p>
+              <p class="text-xs text-green-600 mt-1">💡 Anda akan diberitahu jarak saat absen</p>
             </div>
           </div>
 
@@ -871,9 +872,9 @@
             return;
           }
 
-          // Open camera
+          // Open camera with distance info
           openCameraModal(async (photoData) => {
-            await processAttendance(type, latitude, longitude, photoData);
+            await processAttendance(type, latitude, longitude, photoData, distance);
           });
         },
         (error) => {
@@ -883,7 +884,7 @@
       );
     }
 
-    async function processAttendance(type, lat, lng, photoData) {
+    async function processAttendance(type, lat, lng, photoData, distance) {
       const today = new Date().toISOString().split('T')[0];
       const now = new Date();
       const timeString = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
@@ -921,7 +922,8 @@
         });
 
         if (result.isOk) {
-          showToast(`Absen masuk berhasil! ${isLate ? '(Terlambat)' : ''}`, isLate ? 'warning' : 'success');
+          const distanceText = Math.round(distance);
+          showToast(`Absen masuk berhasil! Jarak: ${distanceText}m dari kantor ${isLate ? '(Terlambat)' : ''}`, isLate ? 'warning' : 'success');
         } else {
           showToast('Gagal menyimpan presensi', 'error');
         }
@@ -945,7 +947,8 @@
         });
 
         if (result.isOk) {
-          showToast('Absen pulang berhasil!', 'success');
+          const distanceText = Math.round(distance);
+          showToast(`Absen pulang berhasil! Jarak: ${distanceText}m dari kantor`, 'success');
         } else {
           showToast('Gagal menyimpan presensi', 'error');
         }
@@ -1255,13 +1258,13 @@
             <p class="text-slate-500 mt-1">Setujui atau tolak aktivitas mahasiswa</p>
           </div>
 
-          <!-- Tabs -->
+          <!-- Tabs (Kelola Akun) -->
           <div class="flex gap-2 bg-white p-2 rounded-xl shadow-sm border border-slate-100">
-            <button onclick="switchValidationTab('activities')" id="tabActivities" class="flex-1 py-2 px-4 rounded-lg font-medium transition-all bg-sky-100 text-sky-700">
-              Aktivitas (${pendingActivities.length})
+            <button onclick="switchUsersTab('participants')" id="tabParticipants" class="flex-1 py-2 px-4 rounded-lg font-medium transition-all bg-sky-100 text-sky-700">
+              Peserta Magang
             </button>
-            <button onclick="switchValidationTab('leaves')" id="tabLeaves" class="flex-1 py-2 px-4 rounded-lg font-medium transition-all text-slate-600 hover:bg-slate-100">
-              Izin/Cuti (${pendingLeaves.length})
+            <button onclick="switchUsersTab('supervisors')" id="tabSupervisors" class="flex-1 py-2 px-4 rounded-lg font-medium transition-all text-slate-600 hover:bg-slate-100">
+              Pembimbing
             </button>
           </div>
 
@@ -1345,6 +1348,17 @@
       document.getElementById('tabLeaves').classList.toggle('bg-sky-100', tab === 'leaves');
       document.getElementById('tabLeaves').classList.toggle('text-sky-700', tab === 'leaves');
       document.getElementById('tabLeaves').classList.toggle('text-slate-600', tab !== 'leaves');
+    }
+
+    function switchUsersTab(tab) {
+      document.getElementById('participantsSection').classList.toggle('hidden', tab !== 'participants');
+      document.getElementById('supervisorsSection').classList.toggle('hidden', tab !== 'supervisors');
+      document.getElementById('tabParticipants').classList.toggle('bg-sky-100', tab === 'participants');
+      document.getElementById('tabParticipants').classList.toggle('text-sky-700', tab === 'participants');
+      document.getElementById('tabParticipants').classList.toggle('text-slate-600', tab !== 'participants');
+      document.getElementById('tabSupervisors').classList.toggle('bg-sky-100', tab === 'supervisors');
+      document.getElementById('tabSupervisors').classList.toggle('text-sky-700', tab === 'supervisors');
+      document.getElementById('tabSupervisors').classList.toggle('text-slate-600', tab !== 'supervisors');
     }
 
     async function approveActivity(id) {
@@ -1675,41 +1689,591 @@
 
     // ====== USERS (Admin) ======
     function renderUsers(content) {
-      const uniqueUsers = [...new Set(allData.filter(d => d.userId).map(a => JSON.stringify({ id: a.userId, name: a.userName, role: a.userRole })))].map(s => JSON.parse(s));
+      const participants = allData.filter(d => d.type === 'participant')
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      const supervisors = allData.filter(d => d.type === 'supervisor')
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
       content.innerHTML = `
         <div class="space-y-6 fade-in">
-          <div>
-            <h2 class="text-2xl font-bold text-slate-800">Kelola Akun 👥</h2>
-            <p class="text-slate-500 mt-1">Lihat daftar pengguna sistem</p>
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h2 class="text-2xl font-bold text-slate-800">Kelola Akun 👥</h2>
+              <p class="text-slate-500 mt-1">Kelola peserta magang dan pembimbing</p>
+            </div>
           </div>
 
+          <!-- Tabs (Kelola Akun) -->
+          <div class="flex gap-2 bg-white p-2 rounded-xl shadow-sm border border-slate-100">
+            <button onclick="switchUsersTab('participants')" id="tabParticipants" class="flex-1 py-2 px-4 rounded-lg font-medium transition-all bg-sky-100 text-sky-700">
+              Peserta Magang (${participants.length})
+            </button>
+            <button onclick="switchUsersTab('supervisors')" id="tabSupervisors" class="flex-1 py-2 px-4 rounded-lg font-medium transition-all text-slate-600 hover:bg-slate-100">
+              Pembimbing (${supervisors.length})
+            </button>
+          </div>
+
+          <!-- SECTION: PARTICIPANTS -->
+          <div id="participantsSection">
+            <div class="flex items-center justify-end mb-4">
+              <button onclick="showParticipantForm()" class="gradient-primary text-white px-6 py-3 rounded-xl font-semibold hover:opacity-90 transition-all shadow-lg shadow-sky-200 flex items-center gap-2">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                </svg>
+                Tambah Peserta
+              </button>
+            </div>
+
+          <div id="participantFormContainer" class="hidden">
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
+              <h3 class="font-semibold text-slate-800 mb-4">Form Pendaftaran Peserta Baru</h3>
+              <div class="space-y-4">
+                <!-- Foto Profil -->
+                <div>
+                  <label class="block text-sm font-medium text-slate-700 mb-2">Foto Profil</label>
+                  <div class="flex items-center gap-4">
+                    <div id="participantPhotoPreview" class="w-24 h-24 bg-slate-100 rounded-full flex items-center justify-center overflow-hidden">
+                      <svg class="w-12 h-12 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+                      </svg>
+                    </div>
+                    <button onclick="openCameraModal((photo) => handleParticipantPhoto(photo))" class="px-4 py-2 bg-sky-100 text-sky-700 rounded-lg text-sm font-medium hover:bg-sky-200 transition-all">
+                      📷 Ambil Foto
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Data Pribadi -->
+                <div class="grid md:grid-cols-2 gap-4">
+                  <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">Nama Lengkap *</label>
+                    <input type="text" id="participantName" placeholder="Nama lengkap" 
+                      class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-200 transition-all outline-none">
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">NIM/NIS *</label>
+                    <input type="text" id="participantNim" placeholder="Nomor induk" 
+                      class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-200 transition-all outline-none">
+                  </div>
+                </div>
+
+                <div class="grid md:grid-cols-2 gap-4">
+                  <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">Email *</label>
+                    <input type="email" id="participantEmail" placeholder="email@example.com" 
+                      class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-200 transition-all outline-none">
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">No. Telepon *</label>
+                    <input type="tel" id="participantPhone" placeholder="08xx-xxxx-xxxx" 
+                      class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-200 transition-all outline-none">
+                  </div>
+                </div>
+
+                <!-- Data Pendidikan -->
+                <div class="grid md:grid-cols-2 gap-4">
+                  <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">Institusi/Sekolah *</label>
+                    <input type="text" id="participantInstitution" placeholder="Nama universitas/sekolah" 
+                      class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-200 transition-all outline-none">
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">Jurusan/Bidang</label>
+                    <input type="text" id="participantMajor" placeholder="Jurusan/program studi" 
+                      class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-200 transition-all outline-none">
+                  </div>
+                </div>
+
+                <!-- Alamat -->
+                <div>
+                  <label class="block text-sm font-medium text-slate-700 mb-2">Alamat Lengkap *</label>
+                  <textarea id="participantAddress" rows="2" placeholder="Alamat lengkap" 
+                    class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-200 transition-all outline-none resize-none"></textarea>
+                </div>
+
+                <!-- Periode Magang -->
+                <div class="grid md:grid-cols-2 gap-4">
+                  <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">Tanggal Mulai *</label>
+                    <input type="date" id="participantStartDate" 
+                      class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-200 transition-all outline-none">
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">Tanggal Selesai *</label>
+                    <input type="date" id="participantEndDate" 
+                      class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-200 transition-all outline-none">
+                  </div>
+                </div>
+
+                <!-- Pembimbing -->
+                <div>
+                  <label class="block text-sm font-medium text-slate-700 mb-2">Pilih Pembimbing *</label>
+                  <select id="participantSupervisor" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-200 transition-all outline-none">
+                    <option value="">Pilih pembimbing</option>
+                    <!-- Options will be populated by JS -->
+                  </select>
+                </div>
+
+                <div class="flex gap-3 pt-2">
+                  <button onclick="submitParticipant()" class="flex-1 gradient-primary text-white py-3 rounded-xl font-semibold hover:opacity-90 transition-all">
+                    ��� Simpan Data Peserta
+                  </button>
+                  <button onclick="hideParticipantForm()" class="px-6 py-3 bg-slate-200 text-slate-700 rounded-xl font-semibold hover:bg-slate-300 transition-all">
+                    Batal
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Daftar Peserta -->
           <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
             <div class="flex items-center justify-between mb-4">
-              <h3 class="font-semibold text-slate-800">Daftar Pengguna</h3>
-              <span class="text-sm text-slate-500">${uniqueUsers.length} pengguna</span>
+              <h3 class="font-semibold text-slate-800">Daftar Peserta Magang</h3>
+              <span class="text-sm text-slate-500">${participants.length} peserta</span>
             </div>
-            ${uniqueUsers.length > 0 ? `
-              <div class="space-y-3">
-                ${uniqueUsers.map(u => `
-                  <div class="flex items-center justify-between p-4 bg-slate-50 rounded-xl">
-                    <div class="flex items-center gap-3">
-                      <div class="w-10 h-10 bg-gradient-to-br from-sky-400 to-cyan-500 rounded-full flex items-center justify-center text-white font-bold">
-                        ${u.name?.charAt(0) || 'U'}
+            ${participants.length > 0 ? `
+              <div class="space-y-4">
+                ${participants.map(p => `
+                  <div class="flex items-start gap-4 p-4 bg-slate-50 rounded-xl hover:bg-slate-100 transition-all">
+                    <div class="w-16 h-16 rounded-full overflow-hidden bg-gradient-to-br from-sky-400 to-cyan-500 flex-shrink-0">
+                      ${p.profilePhoto ? 
+                        `<img src="${p.profilePhoto}" class="w-full h-full object-cover" alt="${p.userName}">` : 
+                        `<div class="w-full h-full flex items-center justify-center text-white font-bold text-xl">${p.userName?.charAt(0) || 'U'}</div>`
+                      }
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <div class="flex items-start justify-between gap-2">
+                        <div>
+                          <p class="font-semibold text-slate-800">${p.userName}</p>
+                          <p class="text-sm text-slate-500">${p.nim} • ${p.institution}</p>
+                          ${p.major ? `<p class="text-xs text-slate-400 mt-1">${p.major}</p>` : ''}
+                        </div>
+                        <button onclick="viewParticipantDetail('${p.__backendId}')" class="px-3 py-1 bg-sky-100 text-sky-700 rounded-lg text-xs font-medium hover:bg-sky-200 transition-all flex-shrink-0">
+                          Detail
+                        </button>
                       </div>
-                      <div>
-                        <p class="font-medium text-slate-800">${u.name || 'Unknown'}</p>
-                        <p class="text-sm text-slate-500 capitalize">${getRoleName(u.role)}</p>
+                      <div class="flex flex-wrap gap-2 mt-3">
+                        ${p.email ? `
+                          <span class="inline-flex items-center gap-1 text-xs text-slate-600">
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                            </svg>
+                            ${p.email}
+                          </span>
+                        ` : ''}
+                        ${p.phone ? `
+                          <span class="inline-flex items-center gap-1 text-xs text-slate-600">
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
+                            </svg>
+                            ${p.phone}
+                          </span>
+                        ` : ''}
+                      </div>
+                      <div class="flex items-center gap-2 mt-2 text-xs text-slate-500">
+                        <span>📅 ${formatDate(new Date(p.startDate))} - ${formatDate(new Date(p.endDate))}</span>
+                        ${p.supervisor ? `<span>• 👨‍🏫 ${p.supervisor}</span>` : ''}
                       </div>
                     </div>
-                    <span class="px-3 py-1 bg-green-100 text-green-700 text-xs rounded-full">Aktif</span>
                   </div>
                 `).join('')}
               </div>
-            ` : '<p class="text-slate-500 text-center py-4">Belum ada pengguna</p>'}
+            ` : '<p class="text-slate-500 text-center py-4">Belum ada peserta magang terdaftar</p>'}
+          </div>
+          </div>
+
+          <!-- SECTION: SUPERVISORS -->
+          <div id="supervisorsSection" class="hidden">
+            <div class="flex items-center justify-end mb-4">
+              <button onclick="showSupervisorForm()" class="gradient-primary text-white px-6 py-3 rounded-xl font-semibold hover:opacity-90 transition-all shadow-lg shadow-sky-200 flex items-center gap-2">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                </svg>
+                Tambah Pembimbing
+              </button>
+            </div>
+
+            <div id="supervisorFormContainer" class="hidden mb-6">
+              <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
+                <h3 class="font-semibold text-slate-800 mb-4">Form Pendaftaran Pembimbing Baru</h3>
+                <div class="space-y-4">
+                  <div class="grid md:grid-cols-2 gap-4">
+                    <div>
+                      <label class="block text-sm font-medium text-slate-700 mb-2">Nama Lengkap *</label>
+                      <input type="text" id="supervisorName" placeholder="Nama lengkap" 
+                        class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-200 transition-all outline-none">
+                    </div>
+                    <div>
+                      <label class="block text-sm font-medium text-slate-700 mb-2">NIP *</label>
+                      <input type="text" id="supervisorNip" placeholder="Nomor Induk Pegawai" 
+                        class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-200 transition-all outline-none">
+                    </div>
+                  </div>
+
+                  <div class="grid md:grid-cols-2 gap-4">
+                    <div>
+                      <label class="block text-sm font-medium text-slate-700 mb-2">Email *</label>
+                      <input type="email" id="supervisorEmail" placeholder="email@example.com" 
+                        class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-200 transition-all outline-none">
+                    </div>
+                    <div>
+                      <label class="block text-sm font-medium text-slate-700 mb-2">No. Telepon *</label>
+                      <input type="tel" id="supervisorPhone" placeholder="08xx-xxxx-xxxx" 
+                        class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-200 transition-all outline-none">
+                    </div>
+                  </div>
+
+                  <div class="grid md:grid-cols-2 gap-4">
+                    <div>
+                      <label class="block text-sm font-medium text-slate-700 mb-2">Jabatan</label>
+                      <input type="text" id="supervisorPosition" placeholder="Jabatan" 
+                        class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-200 transition-all outline-none">
+                    </div>
+                    <div>
+                      <label class="block text-sm font-medium text-slate-700 mb-2">Bidang/Unit Kerja</label>
+                      <input type="text" id="supervisorDepartment" placeholder="Bidang/Unit" 
+                        class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-200 transition-all outline-none">
+                    </div>
+                  </div>
+
+                  <div class="flex gap-3 pt-2">
+                    <button onclick="submitSupervisor()" class="flex-1 gradient-primary text-white py-3 rounded-xl font-semibold hover:opacity-90 transition-all">
+                      💾 Simpan Data Pembimbing
+                    </button>
+                    <button onclick="hideSupervisorForm()" class="px-6 py-3 bg-slate-200 text-slate-700 rounded-xl font-semibold hover:bg-slate-300 transition-all">
+                      Batal
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Daftar Pembimbing -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
+              <div class="flex items-center justify-between mb-4">
+                <h3 class="font-semibold text-slate-800">Daftar Pembimbing</h3>
+                <span class="text-sm text-slate-500">${supervisors.length} pembimbing</span>
+              </div>
+              ${supervisors.length > 0 ? `
+                <div class="space-y-3">
+                  ${supervisors.map(s => `
+                    <div class="flex items-center justify-between p-4 bg-slate-50 rounded-xl hover:bg-slate-100 transition-all">
+                      <div class="flex items-center gap-3">
+                        <div class="w-12 h-12 bg-gradient-to-br from-purple-400 to-indigo-500 rounded-full flex items-center justify-center text-white font-bold">
+                          ${s.userName?.charAt(0) || 'P'}
+                        </div>
+                        <div>
+                          <p class="font-semibold text-slate-800">${s.userName}</p>
+                          <p class="text-sm text-slate-500">${s.nip || 'NIP belum diisi'}</p>
+                          ${s.position ? `<p class="text-xs text-slate-400">${s.position}${s.department ? ' • ' + s.department : ''}</p>` : ''}
+                        </div>
+                      </div>
+                      <div class="flex flex-col items-end gap-1">
+                        ${s.email ? `<span class="text-xs text-slate-600">📧 ${s.email}</span>` : ''}
+                        ${s.phone ? `<span class="text-xs text-slate-600">📱 ${s.phone}</span>` : ''}
+                      </div>
+                    </div>
+                  `).join('')}
+                </div>
+              ` : '<p class="text-slate-500 text-center py-4">Belum ada pembimbing terdaftar</p>'}
+            </div>
+          </div>
+        </div>
+
+        <!-- Detail Modal -->
+        <div id="participantDetailModal" class="fixed inset-0 z-[100] hidden items-center justify-center p-4 bg-black/70">
+          <div class="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div class="sticky top-0 bg-white p-4 border-b border-slate-100 flex items-center justify-between z-10">
+              <h3 class="font-semibold text-slate-800">Detail Peserta Magang</h3>
+              <button onclick="closeParticipantDetail()" class="p-2 hover:bg-slate-100 rounded-lg transition-colors">
+                <svg class="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+              </button>
+            </div>
+            <div id="participantDetailContent" class="p-6">
+              <!-- Content will be populated by JS -->
+            </div>
           </div>
         </div>
       `;
+    }
+
+    let participantPhotoData = null;
+
+    function showParticipantForm() {
+      document.getElementById('participantFormContainer').classList.remove('hidden');
+      // Set default dates
+      const today = new Date().toISOString().split('T')[0];
+      document.getElementById('participantStartDate').value = today;
+      const threeMonthsLater = new Date();
+      threeMonthsLater.setMonth(threeMonthsLater.getMonth() + 3);
+      document.getElementById('participantEndDate').value = threeMonthsLater.toISOString().split('T')[0];
+      
+      // Populate supervisor options
+      const supervisors = allData.filter(d => d.type === 'supervisor');
+      const supervisorSelect = document.getElementById('participantSupervisor');
+      supervisorSelect.innerHTML = '<option value="">Pilih pembimbing</option>' +
+        supervisors.map(s => `<option value="${s.userName}">${s.userName}</option>`).join('');
+    }
+
+    function hideParticipantForm() {
+      document.getElementById('participantFormContainer').classList.add('hidden');
+      // Clear form
+      document.getElementById('participantName').value = '';
+      document.getElementById('participantNim').value = '';
+      document.getElementById('participantEmail').value = '';
+      document.getElementById('participantPhone').value = '';
+      document.getElementById('participantInstitution').value = '';
+      document.getElementById('participantMajor').value = '';
+      document.getElementById('participantAddress').value = '';
+      document.getElementById('participantSupervisor').value = '';
+      participantPhotoData = null;
+      document.getElementById('participantPhotoPreview').innerHTML = `
+        <svg class="w-12 h-12 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+        </svg>
+      `;
+    }
+
+    function handleParticipantPhoto(photoData) {
+      participantPhotoData = photoData;
+      document.getElementById('participantPhotoPreview').innerHTML = `
+        <img src="${photoData}" class="w-full h-full object-cover" alt="Preview">
+      `;
+    }
+
+    async function submitParticipant() {
+      const name = document.getElementById('participantName').value.trim();
+      const nim = document.getElementById('participantNim').value.trim();
+      const email = document.getElementById('participantEmail').value.trim();
+      const phone = document.getElementById('participantPhone').value.trim();
+      const institution = document.getElementById('participantInstitution').value.trim();
+      const major = document.getElementById('participantMajor').value.trim();
+      const address = document.getElementById('participantAddress').value.trim();
+      const startDate = document.getElementById('participantStartDate').value;
+      const endDate = document.getElementById('participantEndDate').value;
+      const supervisor = document.getElementById('participantSupervisor').value;
+
+      // Validation
+      if (!name || !nim || !email || !phone || !institution || !address || !startDate || !endDate || !supervisor) {
+        showToast('Lengkapi semua field yang wajib diisi (*)', 'error');
+        return;
+      }
+
+      if (allData.filter(d => d.type === 'participant').length >= 999) {
+        showToast('Batas maksimum 999 peserta tercapai', 'error');
+        return;
+      }
+
+      // Check duplicate NIM
+      const existingNim = allData.find(d => d.type === 'participant' && d.nim === nim);
+      if (existingNim) {
+        showToast('NIM/NIS sudah terdaftar', 'error');
+        return;
+      }
+
+      const result = await window.dataSdk.create({
+        type: 'participant',
+        userId: 'participant_' + Date.now(),
+        userName: name,
+        userRole: 'mahasiswa',
+        nim: nim,
+        email: email,
+        phone: phone,
+        institution: institution,
+        major: major,
+        address: address,
+        startDate: startDate,
+        endDate: endDate,
+        supervisor: supervisor,
+        profilePhoto: participantPhotoData,
+        createdAt: new Date().toISOString()
+      });
+
+      if (result.isOk) {
+        showToast('Peserta berhasil ditambahkan!', 'success');
+        hideParticipantForm();
+      } else {
+        showToast('Gagal menambahkan peserta', 'error');
+      }
+    }
+
+    // ====== SUPERVISOR MANAGEMENT ======
+    function showSupervisorForm() {
+      document.getElementById('supervisorFormContainer').classList.remove('hidden');
+    }
+
+    function hideSupervisorForm() {
+      document.getElementById('supervisorFormContainer').classList.add('hidden');
+      document.getElementById('supervisorName').value = '';
+      document.getElementById('supervisorNip').value = '';
+      document.getElementById('supervisorEmail').value = '';
+      document.getElementById('supervisorPhone').value = '';
+      document.getElementById('supervisorPosition').value = '';
+      document.getElementById('supervisorDepartment').value = '';
+    }
+
+    async function submitSupervisor() {
+      const name = document.getElementById('supervisorName').value.trim();
+      const nip = document.getElementById('supervisorNip').value.trim();
+      const email = document.getElementById('supervisorEmail').value.trim();
+      const phone = document.getElementById('supervisorPhone').value.trim();
+      const position = document.getElementById('supervisorPosition').value.trim();
+      const department = document.getElementById('supervisorDepartment').value.trim();
+
+      // Validation
+      if (!name || !nip || !email || !phone) {
+        showToast('Lengkapi semua field yang wajib diisi (*)', 'error');
+        return;
+      }
+
+      if (allData.filter(d => d.type === 'supervisor').length >= 999) {
+        showToast('Batas maksimum 999 pembimbing tercapai', 'error');
+        return;
+      }
+
+      // Check duplicate NIP
+      const existingNip = allData.find(d => d.type === 'supervisor' && d.nip === nip);
+      if (existingNip) {
+        showToast('NIP sudah terdaftar', 'error');
+        return;
+      }
+
+      const result = await window.dataSdk.create({
+        type: 'supervisor',
+        userId: 'supervisor_' + Date.now(),
+        userName: name,
+        userRole: 'pembimbing',
+        nip: nip,
+        email: email,
+        phone: phone,
+        position: position,
+        department: department,
+        createdAt: new Date().toISOString()
+      });
+
+      if (result.isOk) {
+        showToast('Pembimbing berhasil ditambahkan!', 'success');
+        hideSupervisorForm();
+      } else {
+        showToast('Gagal menambahkan pembimbing', 'error');
+      }
+    }
+
+    function viewParticipantDetail(id) {
+      const participant = allData.find(d => d.__backendId === id);
+      if (!participant) return;
+
+      const modal = document.getElementById('participantDetailModal');
+      const content = document.getElementById('participantDetailContent');
+
+      // Get participant stats
+      const attendance = allData.filter(d => d.type === 'attendance' && d.userId === participant.userId);
+      const activities = allData.filter(d => d.type === 'activity' && d.userId === participant.userId);
+      const evaluation = allData.find(d => d.type === 'evaluation' && d.userId === participant.userId);
+
+      content.innerHTML = `
+        <div class="space-y-6">
+          <!-- Profile -->
+          <div class="flex items-center gap-4">
+            <div class="w-24 h-24 rounded-full overflow-hidden bg-gradient-to-br from-sky-400 to-cyan-500 flex-shrink-0">
+              ${participant.profilePhoto ? 
+                `<img src="${participant.profilePhoto}" class="w-full h-full object-cover" alt="${participant.userName}">` : 
+                `<div class="w-full h-full flex items-center justify-center text-white font-bold text-3xl">${participant.userName?.charAt(0) || 'U'}</div>`
+              }
+            </div>
+            <div>
+              <h3 class="text-2xl font-bold text-slate-800">${participant.userName}</h3>
+              <p class="text-slate-500">${participant.nim}</p>
+              <span class="inline-block mt-2 px-3 py-1 bg-green-100 text-green-700 text-sm rounded-full">Aktif</span>
+            </div>
+          </div>
+
+          <!-- Info Cards -->
+          <div class="grid md:grid-cols-3 gap-4">
+            <div class="bg-slate-50 rounded-xl p-4 text-center">
+              <p class="text-2xl font-bold text-slate-800">${attendance.length}</p>
+              <p class="text-sm text-slate-500 mt-1">Total Kehadiran</p>
+            </div>
+            <div class="bg-slate-50 rounded-xl p-4 text-center">
+              <p class="text-2xl font-bold text-slate-800">${activities.filter(a => a.activityStatus === 'approved').length}</p>
+              <p class="text-sm text-slate-500 mt-1">Aktivitas Disetujui</p>
+            </div>
+            <div class="bg-slate-50 rounded-xl p-4 text-center">
+              <p class="text-2xl font-bold text-slate-800">${evaluation ? evaluation.evaluationScore : '-'}</p>
+              <p class="text-sm text-slate-500 mt-1">Skor Evaluasi</p>
+            </div>
+          </div>
+
+          <!-- Personal Info -->
+          <div>
+            <h4 class="font-semibold text-slate-800 mb-3">Informasi Pribadi</h4>
+            <div class="space-y-2">
+              <div class="flex justify-between py-2 border-b border-slate-100">
+                <span class="text-slate-500">Email</span>
+                <span class="text-slate-800 font-medium">${participant.email}</span>
+              </div>
+              <div class="flex justify-between py-2 border-b border-slate-100">
+                <span class="text-slate-500">Telepon</span>
+                <span class="text-slate-800 font-medium">${participant.phone}</span>
+              </div>
+              <div class="flex justify-between py-2 border-b border-slate-100">
+                <span class="text-slate-500">Alamat</span>
+                <span class="text-slate-800 font-medium text-right">${participant.address}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Education Info -->
+          <div>
+            <h4 class="font-semibold text-slate-800 mb-3">Informasi Pendidikan</h4>
+            <div class="space-y-2">
+              <div class="flex justify-between py-2 border-b border-slate-100">
+                <span class="text-slate-500">Institusi</span>
+                <span class="text-slate-800 font-medium">${participant.institution}</span>
+              </div>
+              ${participant.major ? `
+                <div class="flex justify-between py-2 border-b border-slate-100">
+                  <span class="text-slate-500">Jurusan</span>
+                  <span class="text-slate-800 font-medium">${participant.major}</span>
+                </div>
+              ` : ''}
+            </div>
+          </div>
+
+          <!-- Internship Info -->
+          <div>
+            <h4 class="font-semibold text-slate-800 mb-3">Informasi Magang</h4>
+            <div class="space-y-2">
+              <div class="flex justify-between py-2 border-b border-slate-100">
+                <span class="text-slate-500">Periode</span>
+                <span class="text-slate-800 font-medium">${formatDate(new Date(participant.startDate))} - ${formatDate(new Date(participant.endDate))}</span>
+              </div>
+              ${participant.supervisor ? `
+                <div class="flex justify-between py-2 border-b border-slate-100">
+                  <span class="text-slate-500">Pembimbing</span>
+                  <span class="text-slate-800 font-medium">${participant.supervisor}</span>
+                </div>
+              ` : ''}
+              <div class="flex justify-between py-2 border-b border-slate-100">
+                <span class="text-slate-500">Terdaftar Sejak</span>
+                <span class="text-slate-800 font-medium">${formatDate(new Date(participant.createdAt))}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function closeParticipantDetail() {
+      const modal = document.getElementById('participantDetailModal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
     }
 
     // ====== LAPORAN ======
@@ -2228,5 +2792,5 @@
       }
     });
   </script>
- <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9c1d2cd0444efdb8',t:'MTc2OTA2NTIzNC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+ <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9c1d3d2f24c4fdb8',t:'MTc2OTA2NTkwNC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
